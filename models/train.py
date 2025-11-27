@@ -38,6 +38,10 @@ def filter_minority_classes(X, y, min_samples: int = 2):
     Returns:
         Filtered X, y with only classes having enough samples
     """
+    # Convert to pandas Series if numpy array
+    if not isinstance(y, pd.Series):
+        y = pd.Series(y)
+    
     class_counts = y.value_counts()
     valid_classes = class_counts[class_counts >= min_samples].index.tolist()
     removed_classes = class_counts[class_counts < min_samples].index.tolist()
@@ -48,7 +52,13 @@ def filter_minority_classes(X, y, min_samples: int = 2):
             print(f"  - Class {cls}: {class_counts[cls]} sample(s)")
     
     mask = y.isin(valid_classes)
-    X_filtered = X[mask]
+    
+    # Handle both DataFrame and numpy array for X
+    if hasattr(X, 'loc'):
+        X_filtered = X[mask]
+    else:
+        X_filtered = X[mask.values]
+    
     y_filtered = y[mask]
     
     print(f"\nFiltered dataset: {len(X_filtered)} samples ({len(X) - len(X_filtered)} removed)")
