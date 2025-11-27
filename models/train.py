@@ -26,6 +26,47 @@ from backend.services.data_fetcher import AQIDataFetcher
 from backend.services.preprocessor import DatabaseManager, DataPreprocessor, get_aqi_category_index
 
 
+def filter_minority_classes(X, y, min_samples: int = 2):
+    """
+    Filter out classes with fewer than min_samples to allow stratified splitting.
+    
+    Args:
+        X: Feature DataFrame or array
+        y: Target Series or array
+        min_samples: Minimum number of samples required per class
+    
+    Returns:
+        Filtered X, y with only classes having enough samples
+    """
+    # Convert to pandas Series if numpy array
+    if not isinstance(y, pd.Series):
+        y = pd.Series(y)
+    
+    class_counts = y.value_counts()
+    valid_classes = class_counts[class_counts >= min_samples].index.tolist()
+    removed_classes = class_counts[class_counts < min_samples].index.tolist()
+    
+    if removed_classes:
+        print(f"\nWarning: Removing classes with fewer than {min_samples} samples:")
+        for cls in removed_classes:
+            print(f"  - Class {cls}: {class_counts[cls]} sample(s)")
+    
+    mask = y.isin(valid_classes)
+    
+    # Handle both DataFrame and numpy array for X
+    if hasattr(X, 'loc'):
+        X_filtered = X[mask]
+    else:
+        X_filtered = X[mask.values]
+    
+    y_filtered = y[mask]
+    
+    print(f"\nFiltered dataset: {len(X_filtered)} samples ({len(X) - len(X_filtered)} removed)")
+    print(f"Remaining classes: {sorted(valid_classes)}")
+    
+    return X_filtered, y_filtered
+
+
 def get_models() -> dict:
     """Get dictionary of models to train"""
     return {
@@ -131,7 +172,7 @@ def save_confusion_matrices(results: dict, save_path: Path):
     print(f"Confusion matrices saved to {save_path}")
 
 
-def train_models(force_new_data: bool = False, days: int = 30) -> dict:
+def train_models(force_new_data: bool = False, days: int = 30, csv_path: str = None) -> dict:
     """Main training pipeline"""
     print("="*60)
     print("AQI Model Training Pipeline")
@@ -145,33 +186,45 @@ def train_models(force_new_data: bool = False, days: int = 30) -> dict:
     preprocessor = DataPreprocessor()
     fetcher = AQIDataFetcher()
     
-    # Check if we need to generate data
-    existing_count = db.get_readings_count()
-    print(f"\nExisting records in database: {existing_count}")
-    
-    min_records_needed = 500
-    if existing_count < min_records_needed or force_new_data:
-        print(f"\nGenerating historical data for training...")
-        historical_data = fetcher.get_historical_data(days=days)
+    if csv_path:
+        print(f"\nLoading data from CSV: {csv_path}")
+        df = pd.read_csv(csv_path)
+        print(f"Loaded {len(df)} records from CSV")
         
-        # Add city field to historical data
-        for record in historical_data:
-            record["city"] = "delhi"
+        # Map CSV columns to expected column names
+        column_mapping = {
+            'pm2_5': 'pm25',
+            'AQI_Label': 'category_index'
+        }
+        df = df.rename(columns=column_mapping)
+    else:
+        # Check if we need to generate data
+        existing_count = db.get_readings_count()
+        print(f"\nExisting records in database: {existing_count}")
         
-        saved = db.save_bulk_readings(historical_data)
-        print(f"Saved {saved} new records to database")
-    
-    # Load data from database
-    df = db.get_readings(limit=10000)
-    print(f"\nLoaded {len(df)} records for training")
-    
-    if len(df) < 100:
-        print("Not enough data for training. Generating more...")
-        historical_data = fetcher.get_historical_data(days=30)
-        for record in historical_data:
-            record["city"] = "delhi"
-        db.save_bulk_readings(historical_data)
+        min_records_needed = 500
+        if existing_count < min_records_needed or force_new_data:
+            print(f"\nGenerating historical data for training...")
+            historical_data = fetcher.get_historical_data(days=days)
+            
+            # Add city field to historical data
+            for record in historical_data:
+                record["city"] = "delhi"
+            
+            saved = db.save_bulk_readings(historical_data)
+            print(f"Saved {saved} new records to database")
+        
+        # Load data from database
         df = db.get_readings(limit=10000)
+        print(f"\nLoaded {len(df)} records for training")
+        
+        if len(df) < 100:
+            print("Not enough data for training. Generating more...")
+            historical_data = fetcher.get_historical_data(days=30)
+            for record in historical_data:
+                record["city"] = "delhi"
+            db.save_bulk_readings(historical_data)
+            df = db.get_readings(limit=10000)
     
     # Preprocess data
     print("\nPreprocessing data...")
@@ -181,9 +234,15 @@ def train_models(force_new_data: bool = False, days: int = 30) -> dict:
     print(f"Features shape: {X.shape}")
     print(f"Target distribution:\n{y.value_counts().sort_index()}")
     
+    # Filter minority classes to allow stratified splitting
+    X_filtered, y_filtered = filter_minority_classes(X, y, min_samples=2)
+    
+    if len(X_filtered) < 10:
+        raise ValueError("Not enough data after filtering minority classes. Need at least 10 samples.")
+    
     # Split data
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
+        X_filtered, y_filtered, test_size=0.2, random_state=42, stratify=y_filtered
     )
     
     print(f"\nTraining set size: {len(X_train)}")
@@ -257,7 +316,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train AQI prediction models")
     parser.add_argument("--force", action="store_true", help="Force regenerate training data")
     parser.add_argument("--days", type=int, default=30, help="Days of historical data to generate")
+    parser.add_argument("--csv", type=str, help="Path to CSV dataset file")
     
     args = parser.parse_args()
     
-    train_models(force_new_data=args.force, days=args.days)
+    train_models(force_new_data=args.force, days=args.days, csv_path=args.csv)

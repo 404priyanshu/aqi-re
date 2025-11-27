@@ -10,11 +10,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
-def train_models():
+def train_models(csv_path: str = None):
     """Train ML models"""
     print("Training ML models...")
     from models.train import train_models as run_training
-    run_training(force_new_data=False, days=30)
+    run_training(force_new_data=False, days=30, csv_path=csv_path)
 
 
 def evaluate_models():
@@ -93,7 +93,8 @@ def main():
     server_parser.add_argument("--dev", action="store_true", help="Run in development mode")
     
     # Train command
-    subparsers.add_parser("train", help="Train ML models")
+    train_parser = subparsers.add_parser("train", help="Train ML models")
+    train_parser.add_argument("--csv", type=str, help="Path to CSV dataset file")
     
     # Evaluate command
     subparsers.add_parser("evaluate", help="Evaluate trained models")
@@ -109,7 +110,7 @@ def main():
         else:
             run_server(args.host, args.port)
     elif args.command == "train":
-        train_models()
+        train_models(csv_path=args.csv)
     elif args.command == "evaluate":
         evaluate_models()
     elif args.command == "fetch":
