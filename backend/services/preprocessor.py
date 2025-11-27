@@ -264,7 +264,7 @@ if __name__ == "__main__":
     preprocessor = DataPreprocessor()
     
     # Test with mock data
-    from data_fetcher import AQIDataFetcher
+    from backend.services.data_fetcher import AQIDataFetcher
     
     fetcher = AQIDataFetcher()
     historical_data = fetcher.get_historical_data(days=7)

@@ -38,7 +38,7 @@ class MockDataGenerator:
                     "name": city.title(),
                     "geo": [28.6139, 77.2090] if city.lower() == "delhi" else [0, 0]
                 },
-                "dominentpol": "pm25",
+                "dominentpol": "pm25",  # Note: AQICN API uses this spelling
                 "iaqi": {
                     "pm25": {"v": round(pm25, 1)},
                     "pm10": {"v": round(pm10, 1)},
@@ -137,7 +137,7 @@ class AQIDataFetcher:
         return {
             "aqi": data.get("aqi", 0),
             "city": data.get("city", {}).get("name", "Unknown"),
-            "dominant_pollutant": data.get("dominentpol", "unknown"),
+            "dominant_pollutant": data.get("dominentpol", "unknown"),  # AQICN API uses this spelling
             "pm25": iaqi.get("pm25", {}).get("v", 0),
             "pm10": iaqi.get("pm10", {}).get("v", 0),
             "co": iaqi.get("co", {}).get("v", 0),
